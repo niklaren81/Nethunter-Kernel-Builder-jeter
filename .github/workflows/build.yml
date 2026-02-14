@@ -15,7 +15,7 @@ jobs:
       repos: ${{ steps.generate-matrix.outputs.repos }}
     steps:
       - name: "😄 Checkout"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: "😆 Generate Matrix"
         id: generate-matrix
@@ -130,7 +130,25 @@ jobs:
         run: make ${args}
 
       - name: "💛 Upload Image"
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Image-${{ env.kernelDevice }}
           path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image
+
+      - name: "💙 Upload Image.gz"
+        uses: actions/upload-artifact@v4
+        with:
+          name: Image.gz-${{ env.kernelDevice }}
+          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz
+
+      - name: "💜 Upload dtb"
+        uses: actions/upload-artifact@v4
+        with:
+          name: dtb-${{ env.kernelDevice }}
+          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtb
+
+      - name: "❤️ Upload dtbo.img"
+        uses: actions/upload-artifact@v4
+        with:
+          name: dtbo.img-${{ env.kernelDevice }}
+          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtbo.img
