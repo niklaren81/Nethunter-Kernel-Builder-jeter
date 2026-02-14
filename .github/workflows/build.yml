@@ -1,4 +1,4 @@
-name: "Build kernels"
+name: "Build Jeter NetHunter Kernel"
 
 env:
   CONFIGURATION: "repos.json"
@@ -20,6 +20,7 @@ jobs:
       - name: "😆 Generate Matrix"
         id: generate-matrix
         run: |
+          # Minify JSON to ensure it fits in GitHub Action outputs
           json_content=$(jq -c . ${{ env.CONFIGURATION }})
           echo "repos=$json_content" >> $GITHUB_OUTPUT
 
@@ -48,88 +49,13 @@ jobs:
       - name: "⭐ Install prerequisites"
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc curl git zip ftp gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev lftp zstd wget libfl-dev python3 python-is-python3 libarchive-tools
+          sudo apt-get install -y build-essential bc curl git zip gcc-aarch64-linux-gnu \
+          gcc-arm-linux-gnueabi libssl-dev lftp zstd wget libfl-dev python3 \
+          python-is-python3 libarchive-tools jq patch
 
-      - name: "🔑 Configure Git Auth"
-        run: |
-          git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
-
-      - name: "🌟 Clone kernel source => (${{ env.kernelRepo }})"
+      - name: "🌟 Clone kernel source"
         working-directory: ./${{ env.kernelDir }}
         run: |
-          git clone --recursive --branch $kernelBranch $kernelRepo $kernelName --depth=1
+          git clone --recursive --branch ${{ env.kernelBranch }} ${{ env.kernelRepo }} ${{ env.kernelName }} --depth=1
 
       - name: "💫 Get toolchains"
-        working-directory: ./${{ env.kernelDir }}
-        env:
-          toolchains: "${{ toJSON(matrix.repos.toolchains) }}"
-        run: |
-          toolchains_num="$(echo $toolchains | jq 'length')"
-          for ((i=0;i<toolchains_num;i++)); do
-            name=$(echo $toolchains | jq -r ".[$i].name")
-            repo=$(echo $toolchains | jq -r ".[$i].repo")
-            branch=$(echo $toolchains | jq -r ".[$i].branch")
-            git clone --recursive --branch $branch $repo $name --depth=1
-            echo "$(pwd)/$name/bin" >> $GITHUB_PATH
-          done
-
-      - name: "😎 Set args"
-        id: generate-args
-        working-directory: ./${{ env.kernelDir }}
-        env:
-          params: "${{ toJSON(matrix.repos.params) }}"
-          extraParams: "${{ toJSON(matrix.repos.extraParams) }}"
-        run: |
-          ARCH=$(echo $params | jq -r ".ARCH")
-          CROSS_COMPILE=$(echo $params | jq -r ".CROSS_COMPILE")
-          CROSS_COMPILE_COMPAT=$(echo $params | jq -r ".CROSS_COMPILE_COMPAT")
-          CLANG_TRIPLE=$(echo $params | jq -r ".CLANG_TRIPLE")
-          AR=$(echo $params | jq -r ".AR")
-          CC=$(echo $params | jq -r ".CC")
-          echo "ARCH=$ARCH" >> $GITHUB_ENV
-          args="-j$(nproc --all)"
-          if [ -n "${{ env.OUT_DIR }}" ]; then
-            mkdir -p $(pwd)/${{ env.OUT_DIR }}
-            args="$args O=$(pwd)/${{ env.OUT_DIR }}"
-          fi
-          if [ -n "$ARCH" ]; then args="$args ARCH=$ARCH"; fi
-          if [ -n "$CROSS_COMPILE" ]; then args="$args CROSS_COMPILE=$CROSS_COMPILE"; fi
-          if [ -n "$CLANG_TRIPLE" ]; then args="$args CLANG_TRIPLE=$CLANG_TRIPLE"; fi
-          if [ -n "$CROSS_COMPILE_COMPAT" ]; then args="$args CROSS_COMPILE_ARM32=$CROSS_COMPILE_COMPAT"; fi
-          if [ -n "$AR" ]; then args="$args AR=$AR"; fi
-          if [ -n "$CC" ]; then args="$args CC=$CC"; fi
-          echo "args=$args" >> $GITHUB_OUTPUT
-          extra_params=$(echo $extraParams | jq -r ' to_entries[] | select(.value != "") | "\(.key)=\(.value)"' | tr "\n" " " | sed 's/ $//')
-          echo "args=$args $extra_params" >> $GITHUB_OUTPUT
-
-      - name: "😋 Update KernelSU"
-        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
-        if: ${{ env.withKernelSU == 'true' }}
-        run: |
-          rm -rf "./KernelSU" "./drivers/kernelsu"
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
-          echo -e "\nCONFIG_KPROBES=y\nCONFIG_HAVE_KPROBES=y\nCONFIG_KPROBE_EVENTS=y" >> ./arch/${{ env.ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
-
-      - name: "👍 Make defconfig"
-        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
-        env:
-          args: ${{ steps.generate-args.outputs.args }}
-        run: make ${{ env.args }} ${{ env.DEFCONFIG_NAME }}
-
-      - name: "🏴‍☠️ Before Action "
-        working-directory: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}
-        run: |
-          echo "CONFIG_OF_CONFIGFS=y" >> .config
-          echo "CONFIG_OF_OVERLAY=y" >> .config
-          
-      - name: "🎶 Build kernel"
-        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
-        env:
-          args: ${{ steps.generate-args.outputs.args }}
-        run: make ${args}
-
-      - name: "💛 Upload Image"
-        uses: actions/upload-artifact@v4
-        with:
-          name: Image-${{ env.kernelDevice }}
-          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image
