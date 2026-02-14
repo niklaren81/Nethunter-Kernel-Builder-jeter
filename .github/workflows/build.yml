@@ -1,4 +1,4 @@
-name: Build Moto G6 Play (jeter) kernel
+name: Build Moto G6 Play (jeter) Kernel
 
 on:
   workflow_dispatch:
@@ -8,21 +8,17 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      CONFIGURATION: repos.json
       OUT_DIR: out
-      kernelDir: JeterNethunter_jeter
       kernelName: JeterNethunter
       kernelRepo: https://github.com/MotorolaMobilityLLC/kernel-msm.git
       kernelBranch: oreo-8.0.0-release-jeter
-      kernelDevice: jeter
       DEFCONFIG_NAME: jeter_defconfig
-      withKernelSU: false
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Install build deps
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -45,19 +41,26 @@ jobs:
 
           mkdir -p "$OUT_DIR"
 
+          echo "=== Running defconfig ==="
           make O="$OUT_DIR" "$DEFCONFIG_NAME"
+
+          echo "=== Auto-fixing broken F2FS config ==="
+          sed -i '/CONFIG_F2FS_FS/d' "$OUT_DIR/.config"
+          echo "# CONFIG_F2FS_FS is not set" >> "$OUT_DIR/.config"
+
+          echo "=== Running oldconfig ==="
+          yes "" | make O="$OUT_DIR" oldconfig
+
+          echo "=== Building kernel ==="
           make -j"$(nproc)" O="$OUT_DIR"
 
-      - name: Pack artifacts
-        if: success()
+      - name: Collect artifacts
         run: |
           mkdir -p artifacts
           cp -v $kernelName/$OUT_DIR/arch/arm/boot/zImage artifacts/ || true
           cp -vr $kernelName/$OUT_DIR/arch/arm/boot/dts artifacts/dts || true
-        shell: bash
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: jeter-kernel-build
-          path: artifacts
