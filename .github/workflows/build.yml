@@ -13,7 +13,7 @@ jobs:
       kernelDir: JeterNethunter_jeter
       kernelName: JeterNethunter
       kernelRepo: https://github.com/MotorolaMobilityLLC/kernel-msm.git
-      kernelBranch: oreo-8.1.0-release-jeter
+      kernelBranch: oreo-8.0.0-release-jeter
       kernelDevice: jeter
       DEFCONFIG_NAME: jeter_defconfig
       withKernelSU: false
