@@ -20,7 +20,6 @@ jobs:
       - name: "😆 Generate Matrix"
         id: generate-matrix
         run: |
-          # Use jq to minify the JSON to a single line
           json_content=$(jq -c . ${{ env.CONFIGURATION }})
           echo "repos=$json_content" >> $GITHUB_OUTPUT
 
@@ -49,7 +48,7 @@ jobs:
       - name: "⭐ Install prerequisites"
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc curl git zip ftp gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev lftp zstd wget libfl-dev python2 python3 libarchive-tools
+          sudo apt-get install -y build-essential bc curl git zip ftp gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev lftp zstd wget libfl-dev python3 python-is-python3 libarchive-tools
 
       - name: "🌟 Clone kernel source => (${{ env.kernelRepo }})"
         working-directory: ./${{ env.kernelDir }}
@@ -67,7 +66,6 @@ jobs:
             repo=$(echo $toolchains | jq -r ".[$i].repo")
             branch=$(echo $toolchains | jq -r ".[$i].branch")
             git clone --recursive --branch $branch $repo $name --depth=1
-            echo "$(pwd)/$name/" >> $GITHUB_PATH
             echo "$(pwd)/$name/bin" >> $GITHUB_PATH
           done
 
@@ -84,9 +82,7 @@ jobs:
           CLANG_TRIPLE=$(echo $params | jq -r ".CLANG_TRIPLE")
           AR=$(echo $params | jq -r ".AR")
           CC=$(echo $params | jq -r ".CC")
-
           echo "ARCH=$ARCH" >> $GITHUB_ENV
-
           args="-j$(nproc --all)"
           if [ -n "${{ env.OUT_DIR }}" ]; then
             mkdir -p $(pwd)/${{ env.OUT_DIR }}
@@ -98,7 +94,6 @@ jobs:
           if [ -n "$CROSS_COMPILE_COMPAT" ]; then args="$args CROSS_COMPILE_ARM32=$CROSS_COMPILE_COMPAT"; fi
           if [ -n "$AR" ]; then args="$args AR=$AR"; fi
           if [ -n "$CC" ]; then args="$args CC=$CC"; fi
-          
           echo "args=$args" >> $GITHUB_OUTPUT
           extra_params=$(echo $extraParams | jq -r ' to_entries[] | select(.value != "") | "\(.key)=\(.value)"' | tr "\n" " " | sed 's/ $//')
           echo "args=$args $extra_params" >> $GITHUB_OUTPUT
@@ -134,21 +129,3 @@ jobs:
         with:
           name: Image-${{ env.kernelDevice }}
           path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image
-
-      - name: "💙 Upload Image.gz"
-        uses: actions/upload-artifact@v4
-        with:
-          name: Image.gz-${{ env.kernelDevice }}
-          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz
-
-      - name: "💜 Upload dtb"
-        uses: actions/upload-artifact@v4
-        with:
-          name: dtb-${{ env.kernelDevice }}
-          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtb
-
-      - name: "❤️ Upload dtbo.img"
-        uses: actions/upload-artifact@v4
-        with:
-          name: dtbo.img-${{ env.kernelDevice }}
-          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtbo.img
