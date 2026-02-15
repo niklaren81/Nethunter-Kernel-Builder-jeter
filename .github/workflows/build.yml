@@ -12,7 +12,6 @@ jobs:
       kernelName: JeterNethunter
       kernelRepo: https://github.com/MotorolaMobilityLLC/kernel-msm.git
       kernelBranch: oreo-8.0.0-release-jeter
-      DEFCONFIG_NAME: jeter_defconfig
 
     steps:
       - name: Checkout repo
@@ -30,6 +29,32 @@ jobs:
         run: |
           git clone --recursive --branch "$kernelBranch" \
             "$kernelRepo" "$kernelName" --depth=1
+
+      - name: Find correct defconfig
+        working-directory: ${{ env.kernelName }}
+        run: |
+          echo "=== Available defconfig files ==="
+          ls -la arch/arm/configs/ | grep -i jeter || true
+          ls -la arch/arm/configs/ | grep -i msm || true
+          
+          # Try to find the correct defconfig
+          if [ -f "arch/arm/configs/jeter_defconfig" ]; then
+            DEFCONFIG="jeter_defconfig"
+          elif [ -f "arch/arm/configs/ext_config/moto-jeter.config" ]; then
+            DEFCONFIG="ext_config/moto-jeter.config"
+          elif [ -f "arch/arm/configs/msm8937-perf_defconfig" ]; then
+            DEFCONFIG="msm8937-perf_defconfig"
+          elif [ -f "arch/arm/configs/msm8937_defconfig" ]; then
+            DEFCONFIG="msm8937_defconfig"
+          else
+            echo "ERROR: Could not find suitable defconfig!"
+            echo "Available configs:"
+            ls -la arch/arm/configs/
+            exit 1
+          fi
+          
+          echo "Using defconfig: $DEFCONFIG"
+          echo "DEFCONFIG_NAME=$DEFCONFIG" >> $GITHUB_ENV
 
       - name: Fix missing F2FS Kconfig BEFORE defconfig
         working-directory: ${{ env.kernelName }}
@@ -55,7 +80,7 @@ jobs:
 
           mkdir -p "$OUT_DIR"
 
-          echo "=== Running defconfig ==="
+          echo "=== Running defconfig: $DEFCONFIG_NAME ==="
           make O="$OUT_DIR" "$DEFCONFIG_NAME"
 
           echo "=== Disabling F2FS in config ==="
@@ -72,6 +97,7 @@ jobs:
         run: |
           mkdir -p artifacts
           cp -v $kernelName/$OUT_DIR/arch/arm/boot/zImage artifacts/ || true
+          cp -v $kernelName/$OUT_DIR/arch/arm/boot/zImage-dtb artifacts/ || true
           cp -vr $kernelName/$OUT_DIR/arch/arm/boot/dts artifacts/dts || true
 
       - name: Upload artifacts
