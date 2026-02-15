@@ -61,24 +61,6 @@ jobs:
           echo "Using defconfig: $DEFCONFIG"
           echo "DEFCONFIG_NAME=$DEFCONFIG" >> $GITHUB_ENV
 
-      - name: Fix DTC multiple definition error
-        working-directory: ${{ env.kernelName }}
-        run: |
-          echo "=== Fixing DTC yylloc multiple definition error ==="
-          
-          # Check if the dtc-lexer.lex.l file exists and patch it
-          if [ -f "scripts/dtc/dtc-lexer.lex.l" ]; then
-            # Remove or comment out the YYLTYPE yylloc declaration
-            sed -i '/^YYLTYPE yylloc;/d' scripts/dtc/dtc-lexer.lex.l
-            echo "Patched dtc-lexer.lex.l"
-          fi
-          
-          # Alternative location for older kernels
-          if [ -f "scripts/dtc/dtc-lexer.l" ]; then
-            sed -i '/^YYLTYPE yylloc;/d' scripts/dtc/dtc-lexer.l
-            echo "Patched dtc-lexer.l"
-          fi
-
       - name: Fix missing F2FS Kconfig
         working-directory: ${{ env.kernelName }}
         run: |
@@ -104,17 +86,17 @@ jobs:
           mkdir -p "$OUT_DIR"
 
           echo "=== Running defconfig: $DEFCONFIG_NAME ==="
-          make O="$OUT_DIR" "$DEFCONFIG_NAME"
+          make O="$OUT_DIR" HOSTCFLAGS="-fcommon" "$DEFCONFIG_NAME"
 
           echo "=== Disabling F2FS in config ==="
           sed -i '/CONFIG_F2FS_FS/d' "$OUT_DIR/.config"
           echo "# CONFIG_F2FS_FS is not set" >> "$OUT_DIR/.config"
 
           echo "=== Running oldconfig ==="
-          yes "" | make O="$OUT_DIR" oldconfig
+          yes "" | make O="$OUT_DIR" HOSTCFLAGS="-fcommon" oldconfig
 
           echo "=== Building kernel ==="
-          make -j"$(nproc)" O="$OUT_DIR"
+          make -j"$(nproc)" O="$OUT_DIR" HOSTCFLAGS="-fcommon"
 
       - name: Collect artifacts
         run: |
