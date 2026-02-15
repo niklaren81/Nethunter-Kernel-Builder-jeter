@@ -31,6 +31,20 @@ jobs:
           git clone --recursive --branch "$kernelBranch" \
             "$kernelRepo" "$kernelName" --depth=1
 
+      - name: Fix missing F2FS Kconfig BEFORE defconfig
+        working-directory: ${{ env.kernelName }}
+        run: |
+          echo "=== Fixing F2FS Kconfig issue ==="
+          
+          # Check if fs/Kconfig references F2FS
+          if grep -q "source.*f2fs/Kconfig" fs/Kconfig; then
+            echo "Found F2FS reference in fs/Kconfig"
+            
+            # Comment out the F2FS source line to prevent the error
+            sed -i 's|^\(source "fs/f2fs/Kconfig"\)|# \1|' fs/Kconfig
+            echo "Commented out F2FS Kconfig source line"
+          fi
+
       - name: Build kernel
         working-directory: ${{ env.kernelName }}
         run: |
@@ -44,7 +58,7 @@ jobs:
           echo "=== Running defconfig ==="
           make O="$OUT_DIR" "$DEFCONFIG_NAME"
 
-          echo "=== Auto-fixing broken F2FS config ==="
+          echo "=== Disabling F2FS in config ==="
           sed -i '/CONFIG_F2FS_FS/d' "$OUT_DIR/.config"
           echo "# CONFIG_F2FS_FS is not set" >> "$OUT_DIR/.config"
 
