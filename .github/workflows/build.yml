@@ -61,29 +61,17 @@ jobs:
           echo "Using defconfig: $DEFCONFIG"
           echo "DEFCONFIG_NAME=$DEFCONFIG" >> $GITHUB_ENV
 
-      - name: Disable all warning-as-error mechanisms
+      - name: Patch kernel/Makefile to fix fork.o compilation
         working-directory: ${{ env.kernelName }}
         run: |
-          echo "=== Patching kernel to remove warning-as-error checks ==="
+          echo "=== Patching kernel/Makefile to disable attribute-alias for fork.o ==="
           
-          # Remove all BUILD_BUG/error directives related to warnings
-          find . -type f -name "*.h" -exec sed -i \
-            -e 's/BUILD_BUG_ON.*Wattribute-alias.*//g' \
-            -e 's/.*error.*forbidden warning.*//g' \
-            -e 's/#error.*Wattribute.*//g' \
-            {} \;
+          # Add CFLAGS override for fork.o at the end of kernel/Makefile
+          echo "" >> kernel/Makefile
+          echo "# Fix for GCC attribute-alias warning in fork.c" >> kernel/Makefile
+          echo "CFLAGS_fork.o := -Wno-error=attribute-alias -Wno-attribute-alias" >> kernel/Makefile
           
-          # Specifically patch syscalls.h
-          if [ -f "include/linux/syscalls.h" ]; then
-            # Remove the type checking that causes the alias warning
-            sed -i 's/__SYSCALL_DEFINEx/__SYSCALL_DEFINEx_DISABLED/g' include/linux/syscalls.h || true
-            sed -i 's/SYSCALL_ALIAS/__SYSCALL_ALIAS/g' include/linux/syscalls.h || true
-          fi
-          
-          # Patch compiler*.h files that enforce warnings
-          find include/linux -name "compiler*.h" -exec sed -i \
-            -e 's/.*error.*warning.*//g' \
-            {} \;
+          cat kernel/Makefile | tail -5
 
       - name: Fix missing F2FS Kconfig
         working-directory: ${{ env.kernelName }}
@@ -119,8 +107,6 @@ jobs:
           echo "=== Disabling all warning-as-error configs ==="
           sed -i '/CONFIG_ERROR_ON_WARNING/d' "$OUT_DIR/.config"
           echo "# CONFIG_ERROR_ON_WARNING is not set" >> "$OUT_DIR/.config"
-          sed -i '/CONFIG_WERROR/d' "$OUT_DIR/.config"
-          echo "# CONFIG_WERROR is not set" >> "$OUT_DIR/.config"
 
           echo "=== Running oldconfig ==="
           yes "" | make O="$OUT_DIR" HOSTCFLAGS="-fcommon" oldconfig
@@ -128,8 +114,7 @@ jobs:
           echo "=== Building kernel ==="
           make -j"$(nproc)" O="$OUT_DIR" \
             HOSTCFLAGS="-fcommon" \
-            KCFLAGS="-w" \
-            W=
+            CFLAGS_KERNEL="-Wno-error=attribute-alias"
 
       - name: Collect artifacts
         run: |
