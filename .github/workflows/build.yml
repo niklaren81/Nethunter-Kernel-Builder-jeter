@@ -23,7 +23,12 @@ jobs:
           sudo apt-get install -y \
             bc bison flex libssl-dev make \
             gcc-arm-linux-gnueabi \
-            git zip
+            git zip python2
+
+      - name: Setup Python 2 as default python
+        run: |
+          sudo update-alternatives --install /usr/bin/python python /usr/bin/python2 1
+          python --version
 
       - name: Clone Motorola kernel
         run: |
@@ -56,7 +61,25 @@ jobs:
           echo "Using defconfig: $DEFCONFIG"
           echo "DEFCONFIG_NAME=$DEFCONFIG" >> $GITHUB_ENV
 
-      - name: Fix missing F2FS Kconfig BEFORE defconfig
+      - name: Fix DTC multiple definition error
+        working-directory: ${{ env.kernelName }}
+        run: |
+          echo "=== Fixing DTC yylloc multiple definition error ==="
+          
+          # Check if the dtc-lexer.lex.l file exists and patch it
+          if [ -f "scripts/dtc/dtc-lexer.lex.l" ]; then
+            # Remove or comment out the YYLTYPE yylloc declaration
+            sed -i '/^YYLTYPE yylloc;/d' scripts/dtc/dtc-lexer.lex.l
+            echo "Patched dtc-lexer.lex.l"
+          fi
+          
+          # Alternative location for older kernels
+          if [ -f "scripts/dtc/dtc-lexer.l" ]; then
+            sed -i '/^YYLTYPE yylloc;/d' scripts/dtc/dtc-lexer.l
+            echo "Patched dtc-lexer.l"
+          fi
+
+      - name: Fix missing F2FS Kconfig
         working-directory: ${{ env.kernelName }}
         run: |
           echo "=== Fixing F2FS Kconfig issue ==="
