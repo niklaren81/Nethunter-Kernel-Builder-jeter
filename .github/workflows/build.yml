@@ -96,7 +96,9 @@ jobs:
           yes "" | make O="$OUT_DIR" HOSTCFLAGS="-fcommon" oldconfig
 
           echo "=== Building kernel ==="
-          make -j"$(nproc)" O="$OUT_DIR" HOSTCFLAGS="-fcommon"
+          make -j"$(nproc)" O="$OUT_DIR" \
+            HOSTCFLAGS="-fcommon" \
+            KCFLAGS="-Wno-attribute-alias -Wno-misleading-indentation"
 
       - name: Collect artifacts
         run: |
