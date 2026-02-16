@@ -5,13 +5,14 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     env:
       OUT_DIR: out
       kernelName: JeterNethunter
       kernelRepo: https://github.com/MotorolaMobilityLLC/kernel-msm.git
       kernelBranch: oreo-8.0.0-release-jeter
+      DEFCONFIG_NAME: jeter_defconfig
 
     steps:
       - name: Checkout repo
@@ -23,149 +24,18 @@ jobs:
           sudo apt-get install -y \
             bc bison flex libssl-dev make \
             gcc-arm-linux-gnueabi \
-            git zip python2
-
-      - name: Setup Python 2 as default python
-        run: |
-          sudo update-alternatives --install /usr/bin/python python /usr/bin/python2 1
-          python --version
+            git zip
 
       - name: Clone Motorola kernel
         run: |
           git clone --recursive --branch "$kernelBranch" \
             "$kernelRepo" "$kernelName" --depth=1
 
-      - name: Find correct defconfig
+      - name: Patch broken Kconfig before defconfig
         working-directory: ${{ env.kernelName }}
         run: |
-          echo "=== Available defconfig files ==="
-          ls -la arch/arm/configs/ | grep -i jeter || true
-          ls -la arch/arm/configs/ | grep -i msm || true
-          
-          # Try to find the correct defconfig
-          if [ -f "arch/arm/configs/jeter_defconfig" ]; then
-            DEFCONFIG="jeter_defconfig"
-          elif [ -f "arch/arm/configs/ext_config/moto-jeter.config" ]; then
-            DEFCONFIG="ext_config/moto-jeter.config"
-          elif [ -f "arch/arm/configs/msm8937-perf_defconfig" ]; then
-            DEFCONFIG="msm8937-perf_defconfig"
-          elif [ -f "arch/arm/configs/msm8937_defconfig" ]; then
-            DEFCONFIG="msm8937_defconfig"
-          else
-            echo "ERROR: Could not find suitable defconfig!"
-            echo "Available configs:"
-            ls -la arch/arm/configs/
-            exit 1
-          fi
-          
-          echo "Using defconfig: $DEFCONFIG"
-          echo "DEFCONFIG_NAME=$DEFCONFIG" >> $GITHUB_ENV
-
-      - name: Disable compile-time syscall checks (CRITICAL FIX)
-        working-directory: ${{ env.kernelName }}
-        run: |
-          echo "=== Disabling compile-time syscall type checking ==="
-          
-          # Find and patch the syscalls.h file to disable compiletime assertions
-          SYSCALLS_H="include/linux/syscalls.h"
-          
-          if [ -f "$SYSCALLS_H" ]; then
-            echo "Patching $SYSCALLS_H"
-            
-            # Backup original
-            cp "$SYSCALLS_H" "${SYSCALLS_H}.bak"
-            
-            # Remove all __compiletime_error and __compiletime_warning macros
-            # These cause .err directives in assembly
-            sed -i '/__compiletime_error/d' "$SYSCALLS_H"
-            sed -i '/__compiletime_warning/d' "$SYSCALLS_H"
-            
-            # Remove the type checking macros that trigger BUILD_BUG_ON
-            sed -i '/static inline void __compiletime_error/,/^}/d' "$SYSCALLS_H"
-            
-            # Comment out any remaining #error directives
-            sed -i 's/^#error /#warning /g' "$SYSCALLS_H"
-            
-            echo "Successfully patched syscalls.h"
-          fi
-
-      - name: Patch kernel/fork.c to remove syscall assertions
-        working-directory: ${{ env.kernelName }}
-        run: |
-          echo "=== Patching kernel/fork.c to disable type assertions ==="
-          
-          FORK_C="kernel/fork.c"
-          
-          if [ -f "$FORK_C" ]; then
-            # Backup original
-            cp "$FORK_C" "${FORK_C}.bak"
-            
-            # Remove or comment out BUILD_BUG_ON statements in fork.c
-            # These trigger compile-time .err directives
-            sed -i 's/BUILD_BUG_ON/\/\/ BUILD_BUG_ON/g' "$FORK_C"
-            
-            echo "Successfully patched fork.c"
-          fi
-
-      - name: Patch compiler.h to disable BUILD_BUG macros globally
-        working-directory: ${{ env.kernelName }}
-        run: |
-          echo "=== Patching compiler.h to disable BUILD_BUG macros ==="
-          
-          COMPILER_H="include/linux/compiler.h"
-          
-          if [ -f "$COMPILER_H" ]; then
-            cp "$COMPILER_H" "${COMPILER_H}.bak"
-            
-            # Add a define to disable BUILD_BUG_ON checks
-            cat >> "$COMPILER_H" << 'EOF'
-
-/* Disable compile-time bug checks for GCC compatibility */
-#undef BUILD_BUG_ON
-#define BUILD_BUG_ON(condition) ((void)0)
-
-#undef BUILD_BUG_ON_ZERO
-#define BUILD_BUG_ON_ZERO(e) (0)
-
-#undef BUILD_BUG_ON_NULL
-#define BUILD_BUG_ON_NULL(e) ((void *)0)
-
-#undef BUILD_BUG_ON_INVALID
-#define BUILD_BUG_ON_INVALID(e) ((void)0)
-EOF
-            
-            echo "Successfully patched compiler.h"
-          fi
-
-      - name: Patch Makefiles to disable problematic warnings
-        working-directory: ${{ env.kernelName }}
-        run: |
-          echo "=== Patching Makefiles to add CFLAGS ==="
-          
-          # Global flags in main Makefile
-          cat >> Makefile << 'EOF'
-
-# Disable warnings that cause build failures with newer GCC
-KBUILD_CFLAGS += -Wno-error=attribute-alias
-KBUILD_CFLAGS += -Wno-attribute-alias
-KBUILD_CFLAGS += -Wno-error
-EOF
-          
-          echo "Successfully patched Makefile"
-
-      - name: Fix missing F2FS Kconfig
-        working-directory: ${{ env.kernelName }}
-        run: |
-          echo "=== Fixing F2FS Kconfig issue ==="
-          
-          # Check if fs/Kconfig references F2FS
-          if grep -q "source.*f2fs/Kconfig" fs/Kconfig; then
-            echo "Found F2FS reference in fs/Kconfig"
-            
-            # Comment out the F2FS source line to prevent the error
-            sed -i 's|^\(source "fs/f2fs/Kconfig"\)|# \1|' fs/Kconfig
-            echo "Commented out F2FS Kconfig source line"
-          fi
+          echo "=== Removing invalid F2FS include from fs/Kconfig ==="
+          sed -i '/f2fs\/Kconfig/d' fs/Kconfig
 
       - name: Build kernel
         working-directory: ${{ env.kernelName }}
@@ -177,68 +47,20 @@ EOF
 
           mkdir -p "$OUT_DIR"
 
-          echo "=== Running defconfig: $DEFCONFIG_NAME ==="
-          make O="$OUT_DIR" HOSTCFLAGS="-fcommon" "$DEFCONFIG_NAME"
-
-          echo "=== Disabling F2FS in config ==="
-          sed -i '/CONFIG_F2FS_FS/d' "$OUT_DIR/.config"
-          echo "# CONFIG_F2FS_FS is not set" >> "$OUT_DIR/.config"
-          
-          echo "=== Disabling all warning-as-error configs ==="
-          sed -i '/CONFIG_ERROR_ON_WARNING/d' "$OUT_DIR/.config"
-          echo "# CONFIG_ERROR_ON_WARNING is not set" >> "$OUT_DIR/.config"
-
-          echo "=== Running oldconfig ==="
-          yes "" | make O="$OUT_DIR" HOSTCFLAGS="-fcommon" oldconfig
+          echo "=== Running defconfig ==="
+          make O="$OUT_DIR" "$DEFCONFIG_NAME"
 
           echo "=== Building kernel ==="
-          make -j"$(nproc)" O="$OUT_DIR" \
-            HOSTCFLAGS="-fcommon" \
-            KCFLAGS="-Wno-error" \
-            2>&1 | tee build.log || {
-              echo "=== BUILD FAILED - Showing last 100 lines of output ==="
-              tail -100 build.log
-              exit 1
-            }
+          make -j"$(nproc)" O="$OUT_DIR"
 
       - name: Collect artifacts
         run: |
           mkdir -p artifacts
-          
-          echo "=== Collecting build artifacts ==="
-          
-          # Collect zImage
-          if [ -f "$kernelName/$OUT_DIR/arch/arm/boot/zImage" ]; then
-            cp -v "$kernelName/$OUT_DIR/arch/arm/boot/zImage" artifacts/
-            echo "✓ zImage collected"
-          else
-            echo "✗ zImage not found"
-          fi
-          
-          # Collect zImage-dtb
-          if [ -f "$kernelName/$OUT_DIR/arch/arm/boot/zImage-dtb" ]; then
-            cp -v "$kernelName/$OUT_DIR/arch/arm/boot/zImage-dtb" artifacts/
-            echo "✓ zImage-dtb collected"
-          else
-            echo "✗ zImage-dtb not found"
-          fi
-          
-          # Collect DTBs
-          if [ -d "$kernelName/$OUT_DIR/arch/arm/boot/dts" ]; then
-            cp -vr "$kernelName/$OUT_DIR/arch/arm/boot/dts" artifacts/dts
-            echo "✓ DTBs collected"
-          else
-            echo "✗ DTBs not found"
-          fi
-          
-          # Collect build config for reference
-          cp -v "$kernelName/$OUT_DIR/.config" artifacts/kernel-config.txt || true
-          
-          echo "=== Artifact collection complete ==="
-          ls -lah artifacts/
+          cp -v $kernelName/$OUT_DIR/arch/arm/boot/zImage artifacts/ || true
+          cp -vr $kernelName/$OUT_DIR/arch/arm/boot/dts artifacts/dts || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: jeter-kernel-build
-          path: artifacts/
+          path: artifacts
